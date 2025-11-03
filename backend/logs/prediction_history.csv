@@ -1,0 +1,9 @@
+timestamp,filename,result,confidence,review_flag
+2025-07-29 14:23:01,patient_001.png,cancer,94.2,False
+2025-07-29 14:23:12,patient_002.png,normal,98.7,False
+2025-07-29 14:24:35,case003_scan.jpeg,cancer,87.6,True
+2025-07-29 14:25:48,testscan004.jpg,normal,96.3,False
+2025-07-29 14:27:10,lungsample005.png,cancer,92.1,False
+2025-07-29 14:30:55,batch_upload_01_patient01.png,normal,99.0,False
+2025-07-29 14:32:02,batch_upload_01_patient02.png,cancer,91.5,True
+2025-07-29 14:33:16,test_user_Xray.png,normal,97.4,False

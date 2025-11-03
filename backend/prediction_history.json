@@ -1,0 +1,92 @@
+[
+  {
+    "filename": "Screenshot_2025-07-05_224416.png",
+    "prediction": "Unchest",
+    "confidence": 0.9143287539482117,
+    "timestamp": "2025-10-30T16:18:55.742317"
+  },
+  {
+    "filename": "Screenshot_2025-07-10_171852.png",
+    "prediction": "Unchest",
+    "confidence": 0.7151884436607361,
+    "timestamp": "2025-10-30T17:25:30.755682"
+  },
+  {
+    "filename": "Malignant_case_10.jpg",
+    "prediction": "Benign",
+    "confidence": 0.9986681938171387,
+    "timestamp": "2025-10-30T18:01:53.659659"
+  },
+  {
+    "filename": "Malignant_case_7.jpg",
+    "prediction": "Benign",
+    "confidence": 0.96745365858078,
+    "timestamp": "2025-10-30T18:03:18.648239"
+  },
+  {
+    "filename": "Malignant_case_10.jpg",
+    "prediction": "Benign",
+    "confidence": 0.9986681938171387,
+    "timestamp": "2025-10-30T18:13:17.652854"
+  },
+  {
+    "filename": "Normal_case_8.jpg",
+    "prediction": "Normal",
+    "confidence": 0.801680862903595,
+    "timestamp": "2025-10-31T04:57:27.090967"
+  },
+  {
+    "filename": "Screenshot_2025-07-05_225602.png",
+    "prediction": "Unchest",
+    "confidence": 0.7706930041313171,
+    "timestamp": "2025-10-31T05:35:39.206372"
+  },
+  {
+    "filename": "Screenshot_2025-07-05_224416.png",
+    "prediction": "Unchest",
+    "confidence": 0.9143287539482117,
+    "timestamp": "2025-10-31T05:47:02.967791"
+  },
+  {
+    "filename": "Screenshot_2025-07-10_164021.png",
+    "prediction": "Unchest",
+    "confidence": 0.9119076132774353,
+    "timestamp": "2025-10-31T07:34:13.728465"
+  },
+  {
+    "filename": "Screenshot_2025-07-10_162704.png",
+    "prediction": "Unchest",
+    "confidence": 0.9849491715431213,
+    "timestamp": "2025-10-31T07:44:50.639021"
+  },
+  {
+    "filename": "Normal_case_7.jpg",
+    "prediction": "Normal",
+    "confidence": 0.8646447658538818,
+    "timestamp": "2025-10-31T07:51:49.208823"
+  },
+  {
+    "filename": "Bengin_case_2.jpg",
+    "prediction": "Normal",
+    "confidence": 0.8693297505378723,
+    "timestamp": "2025-10-31T07:52:54.827148"
+  },
+  {
+    "filename": "Malignant_case_1.jpg",
+    "prediction": "Benign",
+    "confidence": 0.9856939911842346,
+    "timestamp": "2025-10-31T07:53:16.887413"
+  },
+  {
+    "filename": "Malignant_case_9.jpg",
+    "prediction": "Benign",
+    "confidence": 0.9987420439720154,
+    "timestamp": "2025-10-31T08:04:07.749741"
+  },
+  {
+    "filename": "Malignant_case_14.jpg",
+    "prediction": "Benign",
+    "confidence": 0.9999216794967651,
+    "timestamp": "2025-10-31T10:27:27.266373"
+  }
+]

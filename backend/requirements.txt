@@ -1,0 +1,33 @@
+# =======================================
+# 🚀 ShwasNetra Backend Requirements
+# =======================================
+
+# --- Core Frameworks ---
+Flask==3.0.3
+Flask-Cors==4.0.1
+
+# --- Machine Learning / AI ---
+tensorflow==2.16.1
+numpy==1.26.4
+scikit-learn==1.5.2
+
+# --- Image Handling ---
+Pillow==10.3.0
+
+# --- Security / Encryption ---
+cryptography==42.0.5
+
+# --- Networking & APIs ---
+requests==2.32.3
+
+# --- PDF Reporting ---
+reportlab==4.1.0
+
+# --- Environment Variables ---
+python-dotenv==1.0.1
+
+# --- Chatbot / LLM ---
+groq==0.10.0
+
+# --- Production WSGI Server (optional for deployment) ---
+gunicorn==22.0.0

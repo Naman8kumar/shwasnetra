@@ -1,0 +1,36 @@
+# system
+.DS_Store
+Thumbs.db
+
+# python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+venv/
+.env
+.env.*
+
+# data & models
+/model_training/
+/preprocessed_luna16/
+/wandb/
+/models/
+/*.keras
+/*.pth
+/*.h5
+/pretrained_models/
+/saved_models/
+
+# frontend build & deps
+node_modules/
+dist/
+build/
+
+# OS / editors
+.vscode/
+.idea/
+*.log
+
+# ignore nested frontend repo (if exists)
+frontend/.git/
