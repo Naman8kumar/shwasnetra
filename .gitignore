@@ -1,36 +1,117 @@
-# system
+# =========================
+# OS / System Files
+# =========================
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# python
+# =========================
+# Python / Flask Backend
+# =========================
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
+*.log
+*.tmp
+*.bak
+
+# Virtual environments
 venv/
+.venv/
+env/
+ENV/
+env.bak/
+
+# Environment variables
 .env
 .env.*
+*.env
 
-# data & models
-/model_training/
-/preprocessed_luna16/
-/wandb/
-/models/
-/*.keras
-/*.pth
-/*.h5
-/pretrained_models/
-/saved_models/
+# Flask cache / uploads
+instance/
+uploads/
+__cache__/
+*.db
+*.sqlite3
 
-# frontend build & deps
+# =========================
+# Machine Learning / Models
+# =========================
+model_training/
+preprocessed_luna16/
+wandb/
+models/
+saved_models/
+pretrained_models/
+*.h5
+*.pth
+*.pt
+*.keras
+*.tflite
+*.onnx
+*.ckpt
+*.pkl
+*.joblib
+*.npz
+*.npy
+*.csv
+*.jsonl
+
+# LUNA16 or dataset folders
+LUNA16/
+The IQ-OTHNCCD lung cancer dataset/
+bias_testing/
+clinical_docs/
+bias_reports/
+Test cases/
+*.nii
+*.mhd
+*.raw
+
+# =========================
+# Frontend (React + Vite)
+# =========================
+frontend/node_modules/
+frontend/dist/
+frontend/build/
 node_modules/
 dist/
 build/
+*.lock
+bun.lockb
+package-lock.json
 
-# OS / editors
+# =========================
+# IDE / Editor Settings
+# =========================
 .vscode/
 .idea/
-*.log
+*.iml
+*.swp
+*.swo
 
-# ignore nested frontend repo (if exists)
+# =========================
+# Logs / Cache
+# =========================
+logs/
+.cache/
+__MACOSX/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pip-log.txt
+coverage/
+*.coverage
+.pytest_cache/
+.tox/
+.mypy_cache/
+.pyre/
+.prof
+
+# =========================
+# Git
+# =========================
 frontend/.git/
+.gitignore~
+.gitmodules
