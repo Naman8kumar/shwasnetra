@@ -7,36 +7,32 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 
-const labelMap = {
-  "Benign": "Benign",
-  "Malignant": "Malignant",
-  "Normal": "Normal",
-  "Unchest": "Unchest"
+// ---------- API BASE (from Vercel env) ----------
+const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+
+// For labels coming from backend
+const labelMap: Record<string, string> = {
+  Benign: "Benign",
+  Malignant: "Malignant",
+  Normal: "Normal",
+  Unchest: "Unchest",
 };
 
-async function encryptFileAES(file, password) {
+// ---------- AES-GCM ENCRYPTION ----------
+async function encryptFileAES(file: File, password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const nonce = crypto.getRandomValues(new Uint8Array(12));
 
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(password),
-    { name: "PBKDF2" },
-    false,
-    ["deriveKey"]
-  );
+  const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), { name: "PBKDF2" }, false, [
+    "deriveKey",
+  ]);
 
   const key = await crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt,
-      iterations: 200000,
-      hash: "SHA-256"
-    },
+    { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
     keyMaterial,
     { name: "AES-GCM", length: 256 },
     false,
-    ["encrypt"]
+    ["encrypt"],
   );
 
   const arrayBuffer = await file.arrayBuffer();
@@ -45,11 +41,12 @@ async function encryptFileAES(file, password) {
   return {
     encryptedBytes: new Uint8Array(encrypted),
     saltHex: Array.from(salt).map((b) => b.toString(16).padStart(2, "0")).join(""),
-    nonceHex: Array.from(nonce).map((b) => b.toString(16).padStart(2, "0")).join("")
+    nonceHex: Array.from(nonce).map((b) => b.toString(16).padStart(2, "0")).join(""),
   };
 }
 
-async function isImageBlurry(file, threshold = 100) {
+// ---------- Quick blur check to warn the user ----------
+async function isImageBlurry(file: File, threshold = 100) {
   const img = document.createElement("img");
   img.src = URL.createObjectURL(file);
   await new Promise((res) => (img.onload = res));
@@ -68,8 +65,10 @@ async function isImageBlurry(file, threshold = 100) {
     gray[j] = 0.299 * imageData.data[i] + 0.587 * imageData.data[i + 1] + 0.114 * imageData.data[i + 2];
   }
 
-  const w = canvas.width, h = canvas.height;
-  let sum = 0, mean = 0;
+  const w = canvas.width,
+    h = canvas.height;
+  let sum = 0,
+    mean = 0;
   const lap = new Float32Array((w - 2) * (h - 2));
   let idx = 0;
 
@@ -95,10 +94,18 @@ async function isImageBlurry(file, threshold = 100) {
   return variance < threshold;
 }
 
+type AnalysisResult = {
+  result: string;
+  confidence: number;
+  xray_url?: string;
+  heatmap_url?: string;
+  message?: string;
+};
+
 const Upload = () => {
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [result, setResult] = useState(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [blurry, setBlurry] = useState(false);
   const [aiExplanation, setAiExplanation] = useState("");
@@ -110,13 +117,14 @@ const Upload = () => {
 
   const { toast } = useToast();
 
-  const handleFileSelect = async (file) => {
+  // ---------- File selection ----------
+  const handleFileSelect = async (file: File) => {
     const validTypes = ["image/jpeg", "image/png", "application/dicom", "application/dicom+json"];
     if (!validTypes.includes(file.type) && !file.name.endsWith(".dcm")) {
       toast({
         title: "Invalid File Type",
         description: "Please upload a JPEG, PNG, or DICOM (.dcm) file",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -131,34 +139,45 @@ const Upload = () => {
       description: blurryDetected
         ? `${file.name} may be blurry. Consider re-uploading a clearer scan.`
         : `${file.name} is ready for analysis.`,
-      variant: blurryDetected ? "destructive" : "default"
+      variant: blurryDetected ? "destructive" : "default",
     });
   };
 
+  // ---------- Analyze (calls /predict on your Render backend) ----------
   const handleAnalyze = async () => {
     if (!selectedFile) {
       toast({ title: "No File Selected", description: "Please upload a file first.", variant: "destructive" });
       return;
     }
+    if (!API_BASE) {
+      toast({
+        title: "Configuration error",
+        description: "VITE_API_BASE is not set in Vercel project settings.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setAnalyzing(true);
     setAiExplanation("");
     const password = "shwasnetra2025";
 
     try {
       const { encryptedBytes, saltHex, nonceHex } = await encryptFileAES(selectedFile, password);
+
       const formData = new FormData();
       formData.append("file", new Blob([encryptedBytes]), selectedFile.name);
       formData.append("salt", saltHex);
       formData.append("nonce", nonceHex);
 
-      const response = await fetch("http://127.0.0.1:5000/predict", { method: "POST", body: formData });
+      const response = await fetch(`${API_BASE}/predict`, { method: "POST", body: formData });
       const data = await response.json();
 
       if (data.status === "rejected") {
         toast({
           title: "Rejected File",
           description: data.message,
-          variant: "destructive"
+          variant: "destructive",
         });
         setResult(null);
         return;
@@ -166,27 +185,28 @@ const Upload = () => {
 
       if (response.ok && data.status === "success") {
         const confidence = typeof data.confidence === "number" ? data.confidence : parseFloat(data.confidence || 0);
-        const xrayUrl = data.xray_image ? `http://127.0.0.1:5000/static/heatmaps/${data.xray_image}` : undefined;
-        const heatmapUrl = data.gradcam ? `http://127.0.0.1:5000/static/heatmaps/${data.gradcam}` : undefined;
 
-        const normalized = {
+        const xrayUrl = data.xray_image ? `${API_BASE}/static/heatmaps/${data.xray_image}` : undefined;
+        const heatmapUrl = data.gradcam ? `${API_BASE}/static/heatmaps/${data.gradcam}` : undefined;
+
+        const normalized: AnalysisResult = {
           result: data.prediction,
           confidence,
           xray_url: xrayUrl,
           heatmap_url: heatmapUrl,
-          message: data.message
+          message: data.message,
         };
         setResult(normalized);
 
         toast({
           title: "Analysis Complete",
-          description: `${labelMap[normalized.result] ?? normalized.result} detected (Confidence: ${normalized.confidence}%)`
+          description: `${labelMap[normalized.result] ?? normalized.result} detected (Confidence: ${normalized.confidence}%)`,
         });
       } else {
         toast({
           title: "Analysis Failed",
           description: data.error || data.message || "Please try again.",
-          variant: "destructive"
+          variant: "destructive",
         });
       }
     } catch (err) {
@@ -194,16 +214,25 @@ const Upload = () => {
       toast({
         title: "Error",
         description: "Upload or analysis failed.",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setAnalyzing(false);
     }
   };
 
+  // ---------- Download PDF (calls /download_report) ----------
   const handleDownloadReport = async () => {
     if (!result) {
       toast({ title: "No result yet", description: "Run analysis first", variant: "destructive" });
+      return;
+    }
+    if (!API_BASE) {
+      toast({
+        title: "Configuration error",
+        description: "VITE_API_BASE is not set in Vercel project settings.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -213,16 +242,16 @@ const Upload = () => {
       result: {
         result: result.result,
         confidence: result.confidence,
-        gradcam: result.heatmap_url ? result.heatmap_url.split("/").pop() : undefined
+        gradcam: result.heatmap_url ? result.heatmap_url.split("/").pop() : undefined,
       },
-      ai_explanation: aiExplanation || ""
+      ai_explanation: aiExplanation || "",
     };
 
     try {
-      const res = await fetch("http://127.0.0.1:5000/download_report", {
+      const res = await fetch(`${API_BASE}/download_report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       const blob = await res.blob();
@@ -237,15 +266,21 @@ const Upload = () => {
     }
   };
 
+  // ---------- Simple explanation (calls /chat) ----------
   const explainPrediction = async () => {
     if (!result) return;
+    if (!API_BASE) {
+      setAiExplanation("Configuration error: VITE_API_BASE missing.");
+      return;
+    }
+
     setAiExplanation("Explaining in layman's terms...");
     const question = `Explain this lung scan result in simple terms: ${labelMap[result.result] ?? result.result} with ${result.confidence}% confidence.`;
     try {
-      const res = await fetch("http://127.0.0.1:5000/chat", {
+      const res = await fetch(`${API_BASE}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: question })
+        body: JSON.stringify({ message: question }),
       });
       const data = await res.json();
       setAiExplanation(data.reply || "Explanation unavailable right now.");
@@ -321,7 +356,10 @@ const Upload = () => {
           </CardHeader>
           <CardContent>
             <div
-              onDragOver={(e) => {e.preventDefault(); setIsDragging(true);}}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
               onDragLeave={() => setIsDragging(false)}
               onDrop={(e) => {
                 e.preventDefault();
@@ -336,11 +374,7 @@ const Upload = () => {
                 <div className="space-y-4">
                   <FileImage className="h-16 w-16 mx-auto text-primary" />
                   <p className="font-semibold">{selectedFile.name}</p>
-                  {blurry && (
-                    <p className="text-sm text-amber-600">
-                      ⚠️ Image appears blurry. Accuracy may be affected.
-                    </p>
-                  )}
+                  {blurry && <p className="text-sm text-amber-600">⚠️ Image appears blurry. Accuracy may be affected.</p>}
                   <Button variant="outline" onClick={() => setSelectedFile(null)}>
                     Remove File
                   </Button>
@@ -380,19 +414,11 @@ const Upload = () => {
                     <p className="text-muted-foreground">Confidence: {result.confidence}%</p>
 
                     {result.xray_url && (
-                      <img
-                        src={result.xray_url}
-                        alt="Chest X-ray"
-                        className="mx-auto mt-4 rounded-lg max-h-96"
-                      />
+                      <img src={result.xray_url} alt="Chest X-ray" className="mx-auto mt-4 rounded-lg max-h-96" />
                     )}
 
                     {result.heatmap_url && (
-                      <img
-                        src={result.heatmap_url}
-                        alt="Grad-CAM Heatmap"
-                        className="mx-auto mt-4 rounded-lg max-h-96"
-                      />
+                      <img src={result.heatmap_url} alt="Grad-CAM Heatmap" className="mx-auto mt-4 rounded-lg max-h-96" />
                     )}
                   </div>
 

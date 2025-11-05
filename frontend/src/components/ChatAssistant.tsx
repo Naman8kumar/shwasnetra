@@ -1,20 +1,22 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Mic, X, Bot, User } from "lucide-react";
+import { Send, X, Bot, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+// Use the same base as Upload.tsx
+const API_BASE = (import.meta.env.VITE_API_BASE || "").replace(/\/$/, "");
+
+type ChatMsg = { role: "user" | "assistant"; content: string };
+
 const ChatAssistant = ({ onClose }: { onClose?: () => void }) => {
-  const [messages, setMessages] = useState<
-    { role: "user" | "assistant"; content: string }[]
-  >([
+  const [messages, setMessages] = useState<ChatMsg[]>([
     {
       role: "assistant",
       content:
         "👋 Hello! I'm here to help you understand lung scans and health insights. How can I assist you today?",
     },
   ]);
-
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -25,38 +27,53 @@ const ChatAssistant = ({ onClose }: { onClose?: () => void }) => {
   }, [messages]);
 
   const sendMessage = async () => {
-    if (!input.trim()) return;
+    const text = input.trim();
+    if (!text) return;
 
-    const newMessages = [...messages, { role: "user", content: input }];
+    const newMessages = [...messages, { role: "user", content: text }];
     setMessages(newMessages);
     setInput("");
     setLoading(true);
 
+    // Config guard
+    if (!API_BASE) {
+      setMessages([
+        ...newMessages,
+        {
+          role: "assistant",
+          content:
+            "⚙️ Configuration issue: VITE_API_BASE is not set. Please set it to your backend URL (e.g., https://shwasnetra.onrender.com) and redeploy.",
+        },
+      ]);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const res = await fetch("/chat", {
+      const res = await fetch(`${API_BASE}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        // Send both the latest message and (optional) history for context
         body: JSON.stringify({
-          // send the full chat history for context!
+          message: text,
           messages: newMessages,
           lang: navigator.language || "en",
         }),
       });
 
       const data = await res.json();
-      const reply =
+      const reply: string =
         data?.reply ||
         "⚠️ I'm having trouble reaching the AI service right now. Please try again.";
 
       setMessages([...newMessages, { role: "assistant", content: reply }]);
     } catch (error) {
       setMessages([
-        ...messages,
-        { role: "user", content: input }, // add the user's message, even if error
+        ...newMessages,
         {
           role: "assistant",
           content:
-            "🚨 Network error while connecting to AI. Please try again later.",
+            "🚨 Network error while connecting to ShwasNetra AI. Please try again later.",
         },
       ]);
     } finally {
@@ -91,9 +108,7 @@ const ChatAssistant = ({ onClose }: { onClose?: () => void }) => {
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={`flex mb-3 ${
-              msg.role === "user" ? "justify-end" : "justify-start"
-            }`}
+            className={`flex mb-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
               className={`px-3 py-2 rounded-2xl max-w-[75%] text-sm shadow-sm ${
@@ -133,11 +148,7 @@ const ChatAssistant = ({ onClose }: { onClose?: () => void }) => {
           disabled={loading}
           className="flex-1"
         />
-        <Button
-          onClick={sendMessage}
-          disabled={loading}
-          className="bg-blue-600 text-white"
-        >
+        <Button onClick={sendMessage} disabled={loading} className="bg-blue-600 text-white">
           <Send className="h-4 w-4" />
         </Button>
       </div>
