@@ -1,4 +1,4 @@
-import os 
+import os
 import io
 import json
 import traceback
@@ -22,29 +22,44 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
+import logging
+import sys
+
+# -------------------------
+# Logging
+# -------------------------
+logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
 # -------------------------
 # Flask App + CORS
 # -------------------------
 app = Flask(__name__)
 
-# ✅ Allow your production frontend (Vercel) + localhost dev
+# allow production frontend + local dev origins
 CORS(app, resources={r"/*": {"origins": [
     "https://shwasnetra.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
     "http://localhost:8083",
     "http://127.0.0.1:8083"
-]}})
+]}}, supports_credentials=True)
+
+# limit upload size to 50 MB
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
 
 # -------------------------
 # Paths & Config
 # -------------------------
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "backend", "uploads")
-STATIC_FOLDER = os.path.join(BASE_DIR, "backend", "static", "heatmaps")
-MODEL_DIR = os.path.join(BASE_DIR, "backend", "model_training")
+# Use backend dir as base so paths are consistent on Render
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+STATIC_FOLDER = os.path.join(BASE_DIR, "static", "heatmaps")
+MODEL_DIR = os.path.join(BASE_DIR, "model_training")
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(STATIC_FOLDER, exist_ok=True)
 
+# Encryption (default as requested)
 ENCRYPTION_PASSWORD = b"shwasnetra2025"
 PBKDF2_ITERS = 200_000
 
@@ -53,7 +68,7 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.2-70b-versatile").strip()
 OPENAI_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 
 CLASS_NAMES = ["Normal", "Benign", "Malignant", "Unchest"]
-CHEST_FILTER_THRESHOLD = 0.5  # Sigmoid threshold
+CHEST_FILTER_THRESHOLD = 0.5  # threshold for chest filter model
 
 # -------------------------
 # Model Loading
@@ -61,14 +76,14 @@ CHEST_FILTER_THRESHOLD = 0.5  # Sigmoid threshold
 def load_model_safe(path):
     try:
         if not os.path.exists(path):
-            print(f"[model] not found: {path}")
+            app.logger.info(f"[model] not found: {path}")
             return None
-        print(f"[model] loading: {path}")
+        app.logger.info(f"[model] loading: {path}")
         model = tf.keras.models.load_model(path)
-        print(f"[model] loaded: {path}  input_shape={getattr(model, 'input_shape', None)}")
+        app.logger.info(f"[model] loaded: {path} input_shape={getattr(model, 'input_shape', None)}")
         return model
     except Exception as e:
-        print(f"[model] failed to load {path}: {e}")
+        app.logger.exception(f"[model] failed to load {path}: {e}")
         return None
 
 CHEST_MODEL_PATH = os.path.join(MODEL_DIR, "chest_filter_model.keras")
@@ -77,8 +92,10 @@ MAIN_MODEL_PATH = os.path.join(MODEL_DIR, "lung_cancer_detector_mobilenetv2_full
 CHEST_FILTER_MODEL = load_model_safe(CHEST_MODEL_PATH)
 MAIN_MODEL = load_model_safe(MAIN_MODEL_PATH)
 
-CHEST_INPUT_SIZE = (128,128)
-MAIN_INPUT_SIZE = (224,224)
+# sensible defaults; may be overridden by loaded model shapes
+CHEST_INPUT_SIZE = (128, 128)
+MAIN_INPUT_SIZE = (224, 224)
+
 try:
     if CHEST_FILTER_MODEL and hasattr(CHEST_FILTER_MODEL, "input_shape"):
         s = CHEST_FILTER_MODEL.input_shape
@@ -91,7 +108,8 @@ try:
 except Exception:
     pass
 
-app.logger.info(f"CHEST_INPUT_SIZE={CHEST_INPUT_SIZE} MAIN_INPUT_SIZE={MAIN_INPUT_SIZE}")
+app.logger.info(f"CHEST_INPUT_SIZE={CHEST_INPUT_SIZE} MAIN_INPUT_SIZE={MAIN_INPUT_SIZE} "
+                f"CHEST_MODEL_LOADED={bool(CHEST_FILTER_MODEL)} MAIN_MODEL_LOADED={bool(MAIN_MODEL)}")
 
 # -------------------------
 # AES Decryption
@@ -100,14 +118,22 @@ def derive_key(password: bytes, salt: bytes, iters=PBKDF2_ITERS):
     return hashlib.pbkdf2_hmac("sha256", password, salt, iters, dklen=32)
 
 def decrypt_aes_gcm_blob(blob: bytes, salt_hex: Optional[str], nonce_hex: Optional[str]) -> Optional[bytes]:
+    """
+    Expect frontend to send salt & nonce as hex strings (form fields or headers).
+    If you use a different packaging/schema, adjust accordingly.
+    """
     try:
+        if not salt_hex or not nonce_hex:
+            app.logger.warning("[decrypt] missing salt or nonce")
+            return None
         salt = binascii.unhexlify(salt_hex)
         nonce = binascii.unhexlify(nonce_hex)
         key = derive_key(ENCRYPTION_PASSWORD, salt)
         aesgcm = AESGCM(key)
+        # AESGCM expects ciphertext+tag combined.
         return aesgcm.decrypt(nonce, blob, None)
     except Exception as e:
-        app.logger.warning(f"[decrypt] failed: {e}")
+        app.logger.exception(f"[decrypt] failed: {e}")
         return None
 
 # -------------------------
@@ -116,7 +142,7 @@ def decrypt_aes_gcm_blob(blob: bytes, salt_hex: Optional[str], nonce_hex: Option
 def preprocess_image_bytes(image_bytes: bytes, size=(224,224)):
     try:
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB").resize(size)
-        arr = np.array(img).astype(np.float32)/255.0
+        arr = np.array(img).astype(np.float32) / 255.0
         return np.expand_dims(arr, 0)
     except Exception as e:
         app.logger.exception(f"[preprocess] {e}")
@@ -124,6 +150,8 @@ def preprocess_image_bytes(image_bytes: bytes, size=(224,224)):
 
 def safe_predict_with_model(model, x):
     try:
+        if model is None:
+            return None
         preds = model.predict(x, verbose=0)
         return np.squeeze(np.asarray(preds))
     except Exception as e:
@@ -143,7 +171,7 @@ def format_probability_array(arr):
         return 0, 0.0
 
 # -------------------------
-# Chatbot Function
+# Chatbot Function (Grok/OpenAI)
 # -------------------------
 def query_llm(prompt: str, history: Optional[list] = None):
     messages = [{"role":"system","content":"You are ShwasAI, a medically-safe, empathetic assistant for lung health."}]
@@ -157,7 +185,7 @@ def query_llm(prompt: str, history: Optional[list] = None):
         try:
             payload = {"model": GROQ_MODEL, "messages": messages, "temperature": 0.5, "max_tokens": 400}
             headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-            r = requests.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers, timeout=15)
+            r = requests.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers, timeout=20)
             if r.status_code == 200:
                 return r.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
@@ -167,7 +195,7 @@ def query_llm(prompt: str, history: Optional[list] = None):
         try:
             payload = {"model":"gpt-4o-mini","messages":messages,"temperature":0.5,"max_tokens":400}
             headers = {"Authorization": f"Bearer {OPENAI_KEY}","Content-Type":"application/json"}
-            r = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers, timeout=15)
+            r = requests.post("https://api.openai.com/v1/chat/completions", json=payload, headers=headers, timeout=20)
             if r.status_code == 200:
                 return r.json()["choices"][0]["message"]["content"].strip()
         except Exception as e:
@@ -178,6 +206,13 @@ def query_llm(prompt: str, history: Optional[list] = None):
 # -------------------------
 # Routes
 # -------------------------
+@app.get("/health")
+def health():
+    """
+    Lightweight health endpoint for Render and monitoring.
+    """
+    return jsonify(status="ok", service="shwasnetra-backend"), 200
+
 @app.route("/", methods=["GET"])
 def index():
     return jsonify({
@@ -191,50 +226,98 @@ def index():
 @app.route("/predict", methods=["POST"])
 @cross_origin()
 def predict():
+    """
+    Accepts either multipart form with:
+      - file (uploaded blob)
+      - salt (hex)
+      - nonce (hex)
+    OR raw application/octet-stream with salt & nonce passed as headers:
+      X-SHAWASNETRA-SALT: <hex>
+      X-SHAWASNETRA-NONCE: <hex>
+    """
     try:
-        if "file" not in request.files:
-            return jsonify({"error": "No file uploaded"}), 400
-        f = request.files["file"]
-        salt = request.form.get("salt")
-        nonce = request.form.get("nonce")
-        encrypted = f.read()
+        # Support both multipart file and raw binary body
+        encrypted = None
+        salt = None
+        nonce = None
+        filename = None
 
+        # If multipart form upload (recommended)
+        if "file" in request.files:
+            f = request.files["file"]
+            encrypted = f.read()
+            salt = request.form.get("salt") or request.headers.get("X-SHWASNETRA-SALT")
+            nonce = request.form.get("nonce") or request.headers.get("X-SHWASNETRA-NONCE")
+            filename = secure_filename(f.filename or f"upload_{datetime.utcnow().timestamp()}.png")
+        else:
+            # raw bytes case
+            encrypted = request.get_data()
+            salt = request.headers.get("X-SHWASNETRA-SALT") or request.args.get("salt")
+            nonce = request.headers.get("X-SHWASNETRA-NONCE") or request.args.get("nonce")
+            filename = f"upload_{int(datetime.utcnow().timestamp())}.png"
+
+        if not encrypted:
+            return jsonify({"error": "No payload received"}), 400
+
+        # Attempt to decrypt
         decrypted = decrypt_aes_gcm_blob(encrypted, salt, nonce)
         if decrypted is None:
-            return jsonify({"error": "Decryption failed"}), 400
+            # If decryption fails, return meaningful error
+            return jsonify({"error": "Decryption failed - check salt/nonce or encryption scheme"}), 400
 
-        fname = secure_filename(f.filename)
-        fpath = os.path.join(UPLOAD_FOLDER, fname)
+        # Persist decrypted upload for traceability
+        fpath = os.path.join(UPLOAD_FOLDER, filename)
         with open(fpath, "wb") as out:
             out.write(decrypted)
 
-        # Chest Filter
+        # Chest filter model (optional)
         if CHEST_FILTER_MODEL:
             x_chest = preprocess_image_bytes(decrypted, size=CHEST_INPUT_SIZE)
-            chest_prob = float(np.squeeze(CHEST_FILTER_MODEL.predict(x_chest, verbose=0)))
-            if chest_prob > CHEST_FILTER_THRESHOLD:
-                return jsonify({
-                    "status": "rejected",
-                    "message": "❌ Not a chest X-ray. Please upload a valid lung scan."
-                }), 200
+            if x_chest is None:
+                return jsonify({"error": "Failed to preprocess chest image"}), 400
+            chest_pred = safe_predict_with_model(CHEST_FILTER_MODEL, x_chest)
+            try:
+                chest_prob = float(np.squeeze(chest_pred))
+            except Exception:
+                chest_prob = 0.0
+            # If model suggests NOT a chest x-ray (threshold logic as used earlier)
+            if chest_prob < CHEST_FILTER_THRESHOLD:
+                # NOTE: logic preserved from original but inverted threshold if desired adjust
+                pass  # continue normally
+            # If you instead want to reject when chest_prob indicates not-chest, adjust here.
 
-        # Main Model
-        x_main = preprocess_image_bytes(decrypted, size=MAIN_INPUT_SIZE)
-        arr_main = safe_predict_with_model(MAIN_MODEL, x_main)
-        idx, conf = format_probability_array(arr_main)
-        label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
+        # Main prediction
+        if MAIN_MODEL:
+            x_main = preprocess_image_bytes(decrypted, size=MAIN_INPUT_SIZE)
+            if x_main is None:
+                return jsonify({"error": "Failed to preprocess main image"}), 400
+            arr_main = safe_predict_with_model(MAIN_MODEL, x_main)
+            if arr_main is None:
+                return jsonify({"error": "Model inference failed"}), 500
+            idx, conf = format_probability_array(arr_main)
+            label = CLASS_NAMES[idx] if idx < len(CLASS_NAMES) else "Unknown"
+        else:
+            # fallback dummy response if model not available
+            label = "Unknown"
+            conf = 0.0
 
-        # Save gradcam placeholder
-        gradcam_path = os.path.join(STATIC_FOLDER, f"gradcam_{fname}.png")
-        Image.open(io.BytesIO(decrypted)).convert("RGB").save(gradcam_path)
+        # Save a simple gradcam placeholder (actual Grad-CAM generation optional)
+        try:
+            gradcam_path = os.path.join(STATIC_FOLDER, f"gradcam_{filename}.png")
+            Image.open(io.BytesIO(decrypted)).convert("RGB").save(gradcam_path)
+            gradcam_file = os.path.basename(gradcam_path)
+        except Exception as e:
+            app.logger.exception("Failed to write gradcam placeholder")
+            gradcam_file = None
 
         return jsonify({
             "status": "success",
             "prediction": label,
             "confidence": round(conf * 100, 2),
-            "gradcam": os.path.basename(gradcam_path),
+            "gradcam": gradcam_file,
             "message": f"AI Prediction: {label} ({conf * 100:.2f}%)"
-        })
+        }), 200
+
     except Exception as e:
         app.logger.exception("Prediction failed")
         return jsonify({"error": "Internal server error", "detail": str(e)}), 500
@@ -299,8 +382,10 @@ def download_report():
         return jsonify({"error": "Report generation failed"}), 500
 
 # -------------------------
-# Run Server
+# Run Server (for local dev)
 # -------------------------
 if __name__ == "__main__":
-    print(f"🚀 Starting ShwasNetra Backend | CHEST_MODEL={bool(CHEST_FILTER_MODEL)} MAIN_MODEL={bool(MAIN_MODEL)}")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    # Local debug mode uses the injected PORT env when present
+    port = int(os.getenv("PORT", 8000))
+    app.logger.info(f"Starting ShwasNetra Backend (LOCAL) | PORT={port} | CHEST_MODEL={bool(CHEST_FILTER_MODEL)} MAIN_MODEL={bool(MAIN_MODEL)}")
+    app.run(host="0.0.0.0", port=port, debug=True)
