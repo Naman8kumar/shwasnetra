@@ -20,28 +20,43 @@ const labelMap: Record<string, string> = {
 
 // ---------- AES-GCM ENCRYPTION ----------
 async function encryptFileAES(file: File, password: string) {
+  if (!("crypto" in window) || !crypto.subtle) {
+    throw new Error("WebCrypto not available in this environment.");
+  }
+
+  // 16 bytes salt, 12 bytes nonce for AES-GCM
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const nonce = crypto.getRandomValues(new Uint8Array(12));
 
-  const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), { name: "PBKDF2" }, false, [
-    "deriveKey",
-  ]);
+  // Import raw password bytes as base key for PBKDF2
+  const pwUtf8 = new TextEncoder().encode(password);
+  const baseKey = await crypto.subtle.importKey("raw", pwUtf8, { name: "PBKDF2" }, false, ["deriveKey"]);
 
-  const key = await crypto.subtle.deriveKey(
+  // Derive AES-GCM key
+  const derivedKey = await crypto.subtle.deriveKey(
     { name: "PBKDF2", salt, iterations: 200000, hash: "SHA-256" },
-    keyMaterial,
+    baseKey,
     { name: "AES-GCM", length: 256 },
     false,
-    ["encrypt"],
+    ["encrypt"]
   );
 
+  // Read file bytes
   const arrayBuffer = await file.arrayBuffer();
-  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, key, arrayBuffer);
+
+  // Encrypt (returns ArrayBuffer)
+  const encryptedBuffer = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, derivedKey, arrayBuffer);
+
+  // Convert to Uint8Array for upload
+  const encryptedBytes = new Uint8Array(encryptedBuffer);
+
+  // Hex encoding helpers
+  const toHex = (arr: Uint8Array) => Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
 
   return {
-    encryptedBytes: new Uint8Array(encrypted),
-    saltHex: Array.from(salt).map((b) => b.toString(16).padStart(2, "0")).join(""),
-    nonceHex: Array.from(nonce).map((b) => b.toString(16).padStart(2, "0")).join(""),
+    encryptedBytes,
+    saltHex: toHex(salt),
+    nonceHex: toHex(nonce),
   };
 }
 
@@ -49,11 +64,17 @@ async function encryptFileAES(file: File, password: string) {
 async function isImageBlurry(file: File, threshold = 100) {
   const img = document.createElement("img");
   img.src = URL.createObjectURL(file);
-  await new Promise((res) => (img.onload = res));
+  await new Promise<void>((res) => {
+    img.onload = () => res();
+    img.onerror = () => res();
+  });
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
-  if (!ctx) return false;
+  if (!ctx || !img.naturalWidth || !img.naturalHeight) {
+    URL.revokeObjectURL(img.src);
+    return false;
+  }
 
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
@@ -119,8 +140,8 @@ const Upload = () => {
 
   // ---------- File selection ----------
   const handleFileSelect = async (file: File) => {
-    const validTypes = ["image/jpeg", "image/png", "application/dicom", "application/dicom+json"];
-    if (!validTypes.includes(file.type) && !file.name.endsWith(".dcm")) {
+    const validTypes = ["image/jpeg", "image/png", "application/dicom", "application/dicom+json", "image/jpg"];
+    if (!validTypes.includes(file.type) && !file.name.toLowerCase().endsWith(".dcm")) {
       toast({
         title: "Invalid File Type",
         description: "Please upload a JPEG, PNG, or DICOM (.dcm) file",
@@ -131,16 +152,21 @@ const Upload = () => {
 
     setSelectedFile(file);
     toast({ title: "Checking Image Quality...", description: "Analyzing for blurriness..." });
-    const blurryDetected = await isImageBlurry(file, 120);
-    setBlurry(blurryDetected);
+    try {
+      const blurryDetected = await isImageBlurry(file, 120);
+      setBlurry(blurryDetected);
 
-    toast({
-      title: "File Selected",
-      description: blurryDetected
-        ? `${file.name} may be blurry. Consider re-uploading a clearer scan.`
-        : `${file.name} is ready for analysis.`,
-      variant: blurryDetected ? "destructive" : "default",
-    });
+      toast({
+        title: "File Selected",
+        description: blurryDetected
+          ? `${file.name} may be blurry. Consider re-uploading a clearer scan.`
+          : `${file.name} is ready for analysis.`,
+        variant: blurryDetected ? "destructive" : "default",
+      });
+    } catch (err) {
+      setBlurry(false);
+      toast({ title: "File Selected", description: `${file.name} is ready for analysis.` });
+    }
   };
 
   // ---------- Analyze (calls /predict on your Render backend) ----------
@@ -166,12 +192,37 @@ const Upload = () => {
       const { encryptedBytes, saltHex, nonceHex } = await encryptFileAES(selectedFile, password);
 
       const formData = new FormData();
-      formData.append("file", new Blob([encryptedBytes]), selectedFile.name);
+      // Pass encrypted bytes as a Blob and include filename
+      const blob = new Blob([encryptedBytes], { type: "application/octet-stream" });
+      formData.append("file", blob, selectedFile.name);
+      // Add salt/nonce both as form fields AND below as headers for compatibility
       formData.append("salt", saltHex);
       formData.append("nonce", nonceHex);
 
-      const response = await fetch(`${API_BASE}/predict`, { method: "POST", body: formData });
-      const data = await response.json();
+      const response = await fetch(`${API_BASE}/predict`, {
+        method: "POST",
+        // Note: Don't set Content-Type here; browser sets the multipart boundary
+        body: formData,
+        headers: {
+          // pass salt & nonce also as custom headers (backend also checks headers)
+          "X-SHWASNETRA-SALT": saltHex,
+          "X-SHWASNETRA-NONCE": nonceHex,
+        },
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      let data: any = {};
+      if (contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        // fallback: try text
+        const txt = await response.text();
+        try {
+          data = JSON.parse(txt);
+        } catch {
+          data = { error: txt || "Invalid response" };
+        }
+      }
 
       if (data.status === "rejected") {
         toast({
@@ -184,14 +235,15 @@ const Upload = () => {
       }
 
       if (response.ok && data.status === "success") {
-        const confidence = typeof data.confidence === "number" ? data.confidence : parseFloat(data.confidence || 0);
+        const confidence = typeof data.confidence === "number" ? data.confidence : parseFloat(data.confidence || "0");
 
+        // Backend returns gradcam filename (basename)
         const xrayUrl = data.xray_image ? `${API_BASE}/static/heatmaps/${data.xray_image}` : undefined;
         const heatmapUrl = data.gradcam ? `${API_BASE}/static/heatmaps/${data.gradcam}` : undefined;
 
         const normalized: AnalysisResult = {
-          result: data.prediction,
-          confidence,
+          result: data.prediction ?? "Unknown",
+          confidence: Number.isFinite(confidence) ? Math.round(confidence * 100) / 100 : 0,
           xray_url: xrayUrl,
           heatmap_url: heatmapUrl,
           message: data.message,
@@ -213,7 +265,7 @@ const Upload = () => {
       console.error(err);
       toast({
         title: "Error",
-        description: "Upload or analysis failed.",
+        description: (err as Error).message || "Upload or analysis failed.",
         variant: "destructive",
       });
     } finally {
@@ -254,12 +306,19 @@ const Upload = () => {
         body: JSON.stringify(payload),
       });
 
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(txt || "Report generation failed");
+      }
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = "ShwasNetra_Report.pdf";
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
       toast({ title: "Error", description: "Report generation failed.", variant: "destructive" });
