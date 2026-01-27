@@ -1,3 +1,5 @@
+// Force update for Vercel deployment
+import { useState, useRef, useEffect } from "react";
 import { useState, useRef, useEffect } from "react";
 import { Send, X, Bot, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
