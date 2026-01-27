@@ -1,24 +1,90 @@
-# Logs
-logs
+# ======================================================
+# OS / SYSTEM
+# ======================================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ======================================================
+# PYTHON / FLASK
+# ======================================================
+__pycache__/
+*.py[cod]
 *.log
+*.tmp
+*.bak
+
+venv/
+.venv/
+env/
+
+# ======================================================
+# ENV FILES (never commit secrets)
+# ======================================================
+.env
+.env.*
+*.env
+
+# ======================================================
+# ML DATASETS (IGNORE)
+# ======================================================
+LUNA16/
+preprocessed_luna16/
+bias_testing/
+clinical_docs/
+bias_reports/
+Test cases/
+datasets/
+data/
+
+*.nii
+*.mhd
+*.raw
+
+# ======================================================
+# ML GENERATED OUTPUTS (IGNORE)
+# ======================================================
+backend/static/heatmaps/
+wandb/
+*.npy
+*.npz
+*.csv
+*.jsonl
+
+# ======================================================
+# ML MODELS (TRACK ONLY WHAT YOU USE)
+# ======================================================
+# ❗ DO NOT ignore .keras / .h5 globally
+# Trained inference models must be committed
+
+# ======================================================
+# FRONTEND
+# ======================================================
+node_modules/
+dist/
+build/
+
+# ======================================================
+# IDE / EDITOR
+# ======================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ======================================================
+# LOGS / CACHE
+# ======================================================
+logs/
+.cache/
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+pip-log.txt
+coverage/
+.pytest_cache/
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+# ======================================================
+# BACKUPS / LOCAL JUNK
+# ======================================================
+frontend_backup/
+deployment/
